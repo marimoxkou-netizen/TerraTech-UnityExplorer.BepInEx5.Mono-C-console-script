@@ -1,0 +1,14 @@
+var managerType = typeof(Singleton.Manager<>).MakeGenericType(typeof(DevCommands.ManDevCommands));
+
+var field = managerType.GetField(
+    "inst",
+    System.Reflection.BindingFlags.Static |
+    System.Reflection.BindingFlags.Public |
+    System.Reflection.BindingFlags.NonPublic
+);
+
+var dev = (DevCommands.ManDevCommands)field.GetValue(null);
+
+dev.SetCommandAccessLevel(DevCommands.Access.DevCheat);
+
+dev.CommandAccessLevel;

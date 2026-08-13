@@ -1,0 +1,15 @@
+int index = 0; // ← ログで見た番号
+
+if (index < 0 || index >= nearbyTechs.Count)
+{
+    Log("Invalid index");
+}
+else
+{
+    TrackedVisible tv = nearbyTechs[index];
+    string techName = tv.visible.IsNotNull() ? tv.visible.name : "(unknown)";
+
+    Singleton.Manager<ManVisible>.inst.ObliterateTrackedVisibleFromWorld(tv);
+
+    Log("Obliterated: " + techName);
+}

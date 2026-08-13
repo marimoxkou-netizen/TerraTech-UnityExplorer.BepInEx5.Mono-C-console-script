@@ -1,0 +1,28 @@
+var du = Singleton.Manager<DebugUtil>.inst;
+
+var flags = System.Reflection.BindingFlags.Instance |
+System.Reflection.BindingFlags.NonPublic;
+
+// 全ブロック表示
+var showBlocks = typeof(DebugUtil).GetField(
+"m_ShowAllBlocksInInventory",
+flags
+);
+
+if (showBlocks != null)
+{
+showBlocks.SetValue(du, true);
+}
+
+// テックローダー制限解除
+var removeRestrictions = typeof(DebugUtil).GetField(
+"<RemoveTechLoaderRestrictions>k__BackingField",
+flags
+);
+
+if (removeRestrictions != null)
+{
+removeRestrictions.SetValue(du, true);
+}
+
+Debug.Log("All blocks + Tech restrictions unlocked");

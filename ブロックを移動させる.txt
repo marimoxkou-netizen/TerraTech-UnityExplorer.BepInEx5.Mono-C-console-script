@@ -1,0 +1,167 @@
+～～～BlockMoveRunner定義～～～
+
+public class BlockMoveRunner : UnityEngine.MonoBehaviour
+{
+    private class MoveTask
+    {
+        public TankBlock target;
+        public UnityEngine.Vector3 direction;
+        public float totalDistance;
+        public float stepSize;
+        public float duration;
+
+        public float elapsed;
+        public float moved;
+        public float stepTimer;
+    }
+
+    private System.Collections.Generic.List<MoveTask> tasks =
+        new System.Collections.Generic.List<MoveTask>();
+
+    private void Update()
+    {
+        for (int i = tasks.Count - 1; i >= 0; i--)
+        {
+            MoveTask task = tasks[i];
+
+            if (task.target == null)
+            {
+                tasks.RemoveAt(i);
+                continue;
+            }
+
+            task.elapsed += UnityEngine.Time.deltaTime;
+            task.stepTimer += UnityEngine.Time.deltaTime;
+
+            int totalSteps =
+                UnityEngine.Mathf.CeilToInt(
+                    task.totalDistance / task.stepSize
+                );
+
+            float stepInterval =
+                task.duration / totalSteps;
+
+            while (task.stepTimer >= stepInterval &&
+                   task.moved < task.totalDistance)
+            {
+                task.stepTimer -= stepInterval;
+
+                float remaining =
+                    task.totalDistance - task.moved;
+
+                float amount =
+                    UnityEngine.Mathf.Min(
+                        task.stepSize,
+                        remaining
+                    );
+
+                task.target.transform.localPosition +=
+                    task.direction * amount;
+
+                task.moved += amount;
+            }
+
+            if (task.elapsed >= task.duration ||
+                task.moved >= task.totalDistance)
+            {
+                float remaining =
+                    task.totalDistance - task.moved;
+
+                if (remaining > 0.0001f)
+                {
+                    task.target.transform.localPosition +=
+                        task.direction * remaining;
+                }
+
+                tasks.RemoveAt(i);
+            }
+        }
+    }
+
+    public void Move(
+        int instanceID,
+        float x,
+        float y,
+        float z,
+        float stepSize,
+        float seconds)
+    {
+        if (stepSize <= 0f || seconds <= 0f)
+            return;
+
+        TankBlock target = null;
+
+        TankBlock[] blocks =
+            UnityEngine.Object.FindObjectsOfType<TankBlock>();
+
+        foreach (TankBlock b in blocks)
+        {
+            if (b != null && b.GetInstanceID() == instanceID)
+            {
+                target = b;
+                break;
+            }
+        }
+
+        if (target == null)
+            return;
+
+        UnityEngine.Vector3 movement =
+            new UnityEngine.Vector3(x, y, z);
+
+        float distance = movement.magnitude;
+
+        if (distance <= 0.0001f)
+            return;
+
+        if (stepSize > distance)
+            stepSize = distance;
+
+        tasks.Add(new MoveTask
+        {
+            target = target,
+            direction = movement.normalized,
+            totalDistance = distance,
+            stepSize = stepSize,
+            duration = seconds,
+            elapsed = 0f,
+            moved = 0f,
+            stepTimer = 0f
+        });
+    }
+}
+
+～～～【定義後】Runnerを作成～～～
+
+var runnerGO = UnityEngine.GameObject.Find("BlockMoveRunner");
+
+if (runnerGO == null)
+{
+    runnerGO = new UnityEngine.GameObject("BlockMoveRunner");
+    UnityEngine.Object.DontDestroyOnLoad(runnerGO);
+}
+
+var runner = runnerGO.GetComponent<BlockMoveRunner>();
+
+if (runner == null)
+{
+    runner = runnerGO.AddComponent<BlockMoveRunner>();
+}
+
+～～～使い方～～～
+
+例
+runner.Move(-2018602, 0f, 0f, 2f, 0.1f, 1f);
+
+複数のブロックを移動させたいときは
+
+runner.Move(-2018602, 0f, 0f, 2f, 0.1f, 1f);
+runner.Move(-2018552, 0f, 0f, 2f, 0.1f, 1f);
+
+-2018602=Instance ID
+0f, 0f, 0.1f=xyz方向に合計何移動させるか
+0.1f=移動の細かさ【この場合x方向に0.1ずつ】
+1f=何秒かけて移動させるか
+例(2)
+runner.Move(-2018552, 0f, 0f, 2f, 0.1f, 1f);
+この場合だとID-2018552のブロックをz方向に0.1ずつ2になるまで1秒かけて進ませる

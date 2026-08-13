@@ -1,0 +1,63 @@
+～～～～～～1個目～～～～～～
+
+public class LooseBlockDestroyerHelper
+{
+    public static bool destroySwitch = false;
+
+    public static System.Collections.IEnumerator Loop()
+    {
+        UnityEngine.Debug.Log("Started destroying loose blocks (all, every 1 sec)");
+
+        while (destroySwitch)
+        {
+            Vector3 center = Singleton.playerTank.visible.centrePosition;
+            float radius = 1000f;
+
+            Bitfield<ObjectTypes> blockOnly = new Bitfield<ObjectTypes>();
+            blockOnly.Add((int)ObjectTypes.Block);
+
+            var it = Singleton.Manager<ManVisible>.inst.VisiblesTouchingRadius(center, radius, blockOnly);
+
+            List<TankBlock> looseBlocks = new List<TankBlock>();
+            foreach (Visible v in it)
+            {
+                if (v.block == null) continue;
+                if (v.block.tank != null) continue; // Techに属しているブロックは除外
+
+                looseBlocks.Add(v.block);
+            }
+
+            int count = 0;
+            foreach (TankBlock block in looseBlocks)
+            {
+                if (block == null) continue;
+                Singleton.Manager<ManLooseBlocks>.inst.HostDestroyBlock(block, false);
+                count++;
+            }
+
+            UnityEngine.Debug.Log("Destroyed " + count + " loose blocks this pass");
+
+            yield return new WaitForSeconds(3f);
+        }
+
+        UnityEngine.Debug.Log("Stopped destroying loose blocks");
+    }
+}
+
+～～～～～～2個目～～～～～～
+
+Action ToggleDestroyLooseBlocks = () => {
+    LooseBlockDestroyerHelper.destroySwitch = !LooseBlockDestroyerHelper.destroySwitch;
+    if (LooseBlockDestroyerHelper.destroySwitch)
+    {
+        Singleton.Manager<ManVisible>.inst.StartCoroutine(LooseBlockDestroyerHelper.Loop());
+    }
+    else
+    {
+        UnityEngine.Debug.Log("Stopping...");
+    }
+};
+
+～～～～～～打つたびにオンオフ～～～～～～
+
+ToggleDestroyLooseBlocks();

@@ -1,0 +1,39 @@
+手順1: プレイヤー一覧を表示
+
+List<NetPlayer> kickCandidates = new List<NetPlayer>();
+
+int numPlayers = Singleton.Manager<ManNetwork>.inst.GetNumPlayers();
+for (int i = 0; i < numPlayers; i++)
+{
+    var p = Singleton.Manager<ManNetwork>.inst.GetPlayer(i);
+    if (p != null)
+    {
+        kickCandidates.Add(p);
+        Log("[" + (kickCandidates.Count - 1) + "] " + p.name + " (Host=" + p.IsHostPlayer + ")");
+    }
+}
+
+手順2: Kick関数を定義
+
+Action<int> KickByIndex = (index) => {
+    if (index < 0 || index >= kickCandidates.Count)
+    {
+        UnityEngine.Debug.Log("Invalid index");
+        return;
+    }
+
+    NetPlayer target = kickCandidates[index];
+
+    if (target.IsHostPlayer)
+    {
+        UnityEngine.Debug.Log("Cannot kick the host!");
+        return;
+    }
+
+    TerraTech.Network.TTNetworkID id = target.GetPlayerIDInLobby();
+    Singleton.Manager<ManNetworkLobby>.inst.LobbySystem.CurrentLobby.KickPlayer(id);
+
+    UnityEngine.Debug.Log("Kicked: " + target.name);
+};
+
+KickByIndex(1); // ← 一覧で見た番号(ホストは0番なので触らない)

@@ -1,0 +1,1099 @@
+==================================================
+TerraTech Custom Skin System
+==================================================
+
+
+========================
+～～～定義～～～
+========================
+
+～～～定義1：TTUVSelectorWindow～～～
+----------------------------------------
+public class TTUVSelectorWindow : UnityEngine.MonoBehaviour
+{
+    public static TTUVSelectorWindow inst;
+
+    public TankBlock TargetBlock;
+    public FactionSubTypes TargetCorp;
+
+    UnityEngine.Vector2[] uv;
+    int[] tri;
+    UnityEngine.Texture2D tex;
+    UnityEngine.Texture2D white;
+
+    public System.Collections.Generic.HashSet<int> sel =
+        new System.Collections.Generic.HashSet<int>();
+
+    UnityEngine.Rect win =
+        new UnityEngine.Rect(30,30,850,780);
+
+    UnityEngine.Rect area;
+
+    public static void Open(TankBlock block)
+    {
+        if(block==null)
+            return;
+
+        if(inst!=null)
+            UnityEngine.Object.Destroy(inst.gameObject);
+
+        var go=new UnityEngine.GameObject(
+            "TTUVSelector"
+        );
+
+        UnityEngine.Object.DontDestroyOnLoad(go);
+
+        inst=go.AddComponent<TTUVSelectorWindow>();
+        inst.Setup(block);
+    }
+
+    void Setup(TankBlock block)
+    {
+        TargetBlock=block;
+
+        TargetCorp=
+            Singleton.Manager<ManSpawn>.inst.GetCorporation(
+                block.BlockType
+            );
+
+        var mf=
+            block.GetComponentsInChildren<
+                UnityEngine.MeshFilter
+            >(true);
+
+        if(
+            mf.Length==0||
+            mf[0].sharedMesh==null
+        )
+        {
+            UnityEngine.Object.Destroy(gameObject);
+            return;
+        }
+
+        var mesh=mf[0].sharedMesh;
+
+        uv=mesh.uv;
+        tri=mesh.triangles;
+
+        var mc=
+            UnityEngine.Object.FindObjectOfType<
+                ManCustomSkins
+            >();
+
+        tex=null;
+
+        if(mc!=null)
+        {
+            var skins=
+                mc.GetCorpSkinTextureInfos(
+                    TargetCorp
+                );
+
+            if(
+                skins!=null&&
+                skins.Count>0
+            )
+                tex=skins[0].m_Albedo;
+        }
+
+        white=
+            new UnityEngine.Texture2D(1,1);
+
+        white.SetPixel(
+            0,
+            0,
+            UnityEngine.Color.white
+        );
+
+        white.Apply(false,true);
+    }
+
+    void OnDestroy()
+    {
+        if(white!=null)
+            UnityEngine.Object.Destroy(white);
+
+        if(inst==this)
+            inst=null;
+    }
+
+    void OnGUI()
+    {
+        if(
+            TargetBlock==null||
+            uv==null||
+            tri==null
+        )
+            return;
+
+        win=GUI.Window(
+            88221,
+            win,
+            Draw,
+            "TT UV Selector | "+TargetCorp
+        );
+    }
+
+    void Draw(int id)
+    {
+        GUILayout.BeginHorizontal();
+
+        GUILayout.Label(
+            "Block: "+TargetBlock.gameObject.name,
+            GUILayout.Width(330)
+        );
+
+        GUILayout.Label(
+            "Corp: "+TargetCorp,
+            GUILayout.Width(120)
+        );
+
+        if(GUILayout.Button(
+            "Clear",
+            GUILayout.Width(70)))
+        {
+            sel.Clear();
+        }
+
+        if(GUILayout.Button(
+            "Output",
+            GUILayout.Width(70)))
+        {
+            Output();
+        }
+
+        if(GUILayout.Button(
+            "Close",
+            GUILayout.Width(70)))
+        {
+            UnityEngine.Object.Destroy(gameObject);
+            GUILayout.EndHorizontal();
+            GUI.DragWindow();
+            return;
+        }
+
+        GUILayout.EndHorizontal();
+
+        GUILayout.Label(
+            "Selected Faces: "+
+            sel.Count+
+            " | Click=Select | Shift+Click=Add"
+        );
+
+        float size=Mathf.Min(
+            win.width-40f,
+            win.height-100f
+        );
+
+        if(size<200f)
+            size=200f;
+
+        area=new UnityEngine.Rect(
+            20,65,size,size
+        );
+
+        GUI.color=UnityEngine.Color.white;
+
+        if(tex!=null)
+        {
+            GUI.DrawTexture(
+                area,
+                tex,
+                ScaleMode.StretchToFill,
+                false
+            );
+        }
+        else
+        {
+            GUI.color=
+                new UnityEngine.Color(
+                    .1f,.1f,.1f,1f
+                );
+
+            GUI.DrawTexture(area,white);
+
+            GUI.color=UnityEngine.Color.white;
+        }
+
+        DrawTriangles();
+        HandleClick();
+
+        GUI.DragWindow(
+            new UnityEngine.Rect(
+                0,0,10000,25
+            )
+        );
+    }
+
+    void DrawTriangles()
+    {
+        for(
+            int face=0;
+            face<tri.Length/3;
+            face++
+        )
+        {
+            int i=face*3;
+
+            if(
+                tri[i]>=uv.Length||
+                tri[i+1]>=uv.Length||
+                tri[i+2]>=uv.Length
+            )
+                continue;
+
+            var a=Map(uv[tri[i]]);
+            var b=Map(uv[tri[i+1]]);
+            var c=Map(uv[tri[i+2]]);
+
+            bool selected=sel.Contains(face);
+
+            if(selected)
+                FillTri(a,b,c);
+
+            var color=
+                selected
+                ?new UnityEngine.Color(1,0,0,1)
+                :new UnityEngine.Color(0,.8f,1,.9f);
+
+            float width=selected?3f:1f;
+
+            Line(a,b,color,width);
+            Line(b,c,color,width);
+            Line(c,a,color,width);
+        }
+    }
+
+    void FillTri(
+        UnityEngine.Vector2 a,
+        UnityEngine.Vector2 b,
+        UnityEngine.Vector2 c)
+    {
+        float minX=Mathf.Min(
+            a.x,Mathf.Min(b.x,c.x)
+        );
+
+        float maxX=Mathf.Max(
+            a.x,Mathf.Max(b.x,c.x)
+        );
+
+        float minY=Mathf.Min(
+            a.y,Mathf.Min(b.y,c.y)
+        );
+
+        float maxY=Mathf.Max(
+            a.y,Mathf.Max(b.y,c.y)
+        );
+
+        GUI.color=
+            new UnityEngine.Color(1,0,0,.28f);
+
+        for(
+            int y=(int)minY;
+            y<=maxY;
+            y+=2
+        )
+        {
+            for(
+                int x=(int)minX;
+                x<=maxX;
+                x+=2
+            )
+            {
+                if(InTriangle(
+                    new UnityEngine.Vector2(x,y),
+                    a,b,c))
+                {
+                    GUI.DrawTexture(
+                        new UnityEngine.Rect(
+                            x,y,2,2
+                        ),
+                        white
+                    );
+                }
+            }
+        }
+
+        GUI.color=UnityEngine.Color.white;
+    }
+
+    void HandleClick()
+    {
+        var e=UnityEngine.Event.current;
+
+        if(
+            e.type!=UnityEngine.EventType.MouseDown||
+            e.button!=0||
+            !area.Contains(e.mousePosition)
+        )
+            return;
+
+        float u=
+            (e.mousePosition.x-area.x)/
+            area.width;
+
+        float v=
+            1f-
+            (e.mousePosition.y-area.y)/
+            area.height;
+
+        var p=
+            new UnityEngine.Vector2(u,v);
+
+        var hits=
+            new System.Collections.Generic.List<int>();
+
+        for(
+            int face=0;
+            face<tri.Length/3;
+            face++
+        )
+        {
+            int i=face*3;
+
+            if(InTriangle(
+                p,
+                uv[tri[i]],
+                uv[tri[i+1]],
+                uv[tri[i+2]]
+            ))
+            {
+                hits.Add(face);
+            }
+        }
+
+        if(hits.Count==0)
+            return;
+
+        if(!e.shift)
+            sel.Clear();
+
+        foreach(int face in hits)
+        {
+            if(sel.Contains(face))
+                sel.Remove(face);
+            else
+                sel.Add(face);
+        }
+
+        e.Use();
+    }
+
+    bool InTriangle(
+        UnityEngine.Vector2 p,
+        UnityEngine.Vector2 a,
+        UnityEngine.Vector2 b,
+        UnityEngine.Vector2 c)
+    {
+        float d1=Sign(p,a,b);
+        float d2=Sign(p,b,c);
+        float d3=Sign(p,c,a);
+
+        bool neg=d1<0||d2<0||d3<0;
+        bool pos=d1>0||d2>0||d3>0;
+
+        return !(neg&&pos);
+    }
+
+    float Sign(
+        UnityEngine.Vector2 p,
+        UnityEngine.Vector2 a,
+        UnityEngine.Vector2 b)
+    {
+        return
+            (p.x-b.x)*(a.y-b.y)-
+            (a.x-b.x)*(p.y-b.y);
+    }
+
+    UnityEngine.Vector2 Map(
+        UnityEngine.Vector2 v)
+    {
+        return new UnityEngine.Vector2(
+            area.x+v.x*area.width,
+            area.y+(1f-v.y)*area.height
+        );
+    }
+
+    void Line(
+        UnityEngine.Vector2 a,
+        UnityEngine.Vector2 b,
+        UnityEngine.Color color,
+        float width)
+    {
+        var d=b-a;
+        float len=d.magnitude;
+
+        if(len<.1f)
+            return;
+
+        var oldMatrix=GUI.matrix;
+        var oldColor=GUI.color;
+
+        GUI.color=color;
+
+        GUIUtility.RotateAroundPivot(
+            Mathf.Atan2(d.y,d.x)*Mathf.Rad2Deg,
+            a
+        );
+
+        GUI.DrawTexture(
+            new UnityEngine.Rect(
+                a.x,
+                a.y-width*.5f,
+                len,
+                width
+            ),
+            white
+        );
+
+        GUI.matrix=oldMatrix;
+        GUI.color=oldColor;
+    }
+
+    void Output()
+    {
+        if(sel.Count==0)
+            return;
+
+        float minU=1f;
+        float maxU=0f;
+        float minV=1f;
+        float maxV=0f;
+
+        foreach(int face in sel)
+        {
+            int i=face*3;
+
+            var a=uv[tri[i]];
+            var b=uv[tri[i+1]];
+            var c=uv[tri[i+2]];
+
+            minU=Mathf.Min(
+                minU,
+                Mathf.Min(a.x,Mathf.Min(b.x,c.x))
+            );
+
+            maxU=Mathf.Max(
+                maxU,
+                Mathf.Max(a.x,Mathf.Max(b.x,c.x))
+            );
+
+            minV=Mathf.Min(
+                minV,
+                Mathf.Min(a.y,Mathf.Min(b.y,c.y))
+            );
+
+            maxV=Mathf.Max(
+                maxV,
+                Mathf.Max(a.y,Mathf.Max(b.y,c.y))
+            );
+        }
+
+        GUIUtility.systemCopyBuffer=
+            "Corp="+TargetCorp+
+            "\nFaces="+sel.Count+
+            "\nUV="+
+            minU.ToString("0.000")+
+            "～"+
+            maxU.ToString("0.000")+
+            " / "+
+            minV.ToString("0.000")+
+            "～"+
+            maxV.ToString("0.000");
+    }
+}
+
+～～～定義2：BlockUVPicker～～～
+----------------------------------------
+public sealed class BlockUVPicker : UnityEngine.MonoBehaviour
+{
+    public static bool Enabled;
+
+    public static BlockUVPicker Install()
+    {
+        var picker=
+            UnityEngine.Object.FindObjectOfType<BlockUVPicker>();
+
+        if(picker==null)
+        {
+            var obj=
+                new UnityEngine.GameObject(
+                    "BlockUVPicker"
+                );
+
+            UnityEngine.Object.DontDestroyOnLoad(obj);
+
+            picker=
+                obj.AddComponent<BlockUVPicker>();
+        }
+
+        Enabled=true;
+
+        return picker;
+    }
+
+    public static bool Toggle()
+    {
+        Enabled=!Enabled;
+        return Enabled;
+    }
+
+    private void Update()
+    {
+        if(!Enabled)
+            return;
+
+        if(
+            UnityEngine.Input.GetKey(
+                UnityEngine.KeyCode.S
+            )&&
+            UnityEngine.Input.GetMouseButtonDown(1)
+        )
+        {
+            OpenPointerUV();
+        }
+    }
+
+    private static void OpenPointerUV()
+    {
+        var block=GetPointerTarget();
+
+        if(block==null)
+            return;
+
+        TTUVSelectorWindow.Open(block);
+    }
+
+    private static TankBlock GetPointerTarget()
+    {
+        var flags=
+            System.Reflection.BindingFlags.Instance|
+            System.Reflection.BindingFlags.Public|
+            System.Reflection.BindingFlags.NonPublic;
+
+        var pointer=
+            UnityEngine.Object.FindObjectOfType(
+                typeof(ManPointer)
+            ) as ManPointer;
+
+        if(pointer==null)
+            return null;
+
+        var property=
+            typeof(ManPointer).GetProperty(
+                "targetBlock",
+                flags
+            );
+
+        if(property!=null)
+            return property.GetValue(
+                pointer,
+                null
+            ) as TankBlock;
+
+        var field=
+            typeof(ManPointer).GetField(
+                "<targetBlock>k__BackingField",
+                flags
+            );
+
+        if(field!=null)
+            return field.GetValue(
+                pointer
+            ) as TankBlock;
+
+        return null;
+    }
+}
+
+【3】TTUVSelection
+----------------------------------------
+public static class TTUVSelection
+{
+    public static int[] Get()
+    {
+        if(TTUVSelectorWindow.inst==null)
+            return new int[0];
+
+        var set=
+            TTUVSelectorWindow.inst.sel;
+
+        var result=
+            new int[set.Count];
+
+        int n=0;
+
+        foreach(int face in set)
+            result[n++]=face;
+
+        return result;
+    }
+
+    public static string Info()
+    {
+        var a=Get();
+
+        return
+            "SelectedFaces="+
+            a.Length+
+            " | "+
+            string.Join(
+                ",",
+                System.Array.ConvertAll(
+                    a,
+                    x=>x.ToString()
+                ).ToArray()
+            );
+    }
+
+    public static FactionSubTypes GetCorp()
+    {
+        if(TTUVSelectorWindow.inst==null)
+            return FactionSubTypes.NULL;
+
+        return TTUVSelectorWindow.inst.TargetCorp;
+    }
+
+    public static TankBlock GetBlock()
+    {
+        if(TTUVSelectorWindow.inst==null)
+            return null;
+
+        return TTUVSelectorWindow.inst.TargetBlock;
+    }
+}
+
+【4】CustomSkinSelectedMakerV2
+----------------------------------------
+public static class CustomSkinSelectedMakerV2
+{
+    static System.Reflection.BindingFlags F =
+        System.Reflection.BindingFlags.Instance |
+        System.Reflection.BindingFlags.Public |
+        System.Reflection.BindingFlags.NonPublic;
+
+    public static string Create(string path,string displayName)
+    {
+        var block=TTUVSelection.GetBlock();
+        var faces=TTUVSelection.Get();
+
+        if(block==null)
+            return "ERROR: UV Selector未起動";
+
+        if(faces==null||faces.Length==0)
+            return "ERROR: Face未選択";
+
+        var corp=
+            Singleton.Manager<ManSpawn>.inst.GetCorporation(
+                block.BlockType);
+
+        var mc=UnityEngine.Object.FindObjectOfType<ManCustomSkins>();
+        var mts=UnityEngine.Object.FindObjectOfType<ManTechMaterialSwap>();
+
+        if(mc==null||mts==null)
+            return "ERROR: Manager";
+
+        var skins=mc.GetCorpSkinTextureInfos(corp);
+
+        if(skins==null||skins.Count==0||skins[0].m_Albedo==null)
+            return "ERROR: Corp Skin 0";
+
+        var baseTex=skins[0].m_Albedo;
+
+        var img=new UnityEngine.Texture2D(2,2);
+
+        try
+        {
+            if(!img.LoadImage(System.IO.File.ReadAllBytes(path)))
+                return "ERROR: PNG";
+        }
+        catch
+        {
+            return "ERROR: PNG";
+        }
+
+        var meshFilters=
+            block.GetComponentsInChildren<UnityEngine.MeshFilter>(true);
+
+        if(meshFilters.Length==0||meshFilters[0].sharedMesh==null)
+            return "ERROR: Mesh";
+
+        var mesh=meshFilters[0].sharedMesh;
+        var uv=mesh.uv;
+        var tri=mesh.triangles;
+
+        int W=baseTex.width;
+        int H=baseTex.height;
+
+        var result=new UnityEngine.Texture2D(
+            W,H,
+            UnityEngine.TextureFormat.RGBA32,
+            false);
+
+        result.SetPixels32(baseTex.GetPixels32());
+
+        float minU=1f,maxU=0f,minV=1f,maxV=0f;
+        int validFaces=0;
+
+        foreach(int face in faces)
+        {
+            int ti=face*3;
+
+            if(
+                ti+2>=tri.Length||
+                tri[ti]>=uv.Length||
+                tri[ti+1]>=uv.Length||
+                tri[ti+2]>=uv.Length)
+                continue;
+
+            var a=uv[tri[ti]];
+            var b=uv[tri[ti+1]];
+            var c=uv[tri[ti+2]];
+
+            minU=Mathf.Min(minU,Mathf.Min(a.x,Mathf.Min(b.x,c.x)));
+            maxU=Mathf.Max(maxU,Mathf.Max(a.x,Mathf.Max(b.x,c.x)));
+            minV=Mathf.Min(minV,Mathf.Min(a.y,Mathf.Min(b.y,c.y)));
+            maxV=Mathf.Max(maxV,Mathf.Max(a.y,Mathf.Max(b.y,c.y)));
+
+            validFaces++;
+        }
+
+        if(validFaces==0)
+            return "ERROR: Valid Faceなし";
+
+        if(
+            maxU-minU<0.000001f||
+            maxV-minV<0.000001f)
+            return "ERROR: UV範囲が小さすぎます";
+
+        int changed=0;
+
+        foreach(int face in faces)
+        {
+            int ti=face*3;
+
+            if(
+                ti+2>=tri.Length||
+                tri[ti]>=uv.Length||
+                tri[ti+1]>=uv.Length||
+                tri[ti+2]>=uv.Length)
+                continue;
+
+            var a=uv[tri[ti]];
+            var b=uv[tri[ti+1]];
+            var c=uv[tri[ti+2]];
+
+            float den=
+                (b.y-c.y)*(a.x-c.x)+
+                (c.x-b.x)*(a.y-c.y);
+
+            if(Mathf.Abs(den)<0.000001f)
+                continue;
+
+            int x0=Mathf.Clamp(
+                Mathf.FloorToInt(
+                    Mathf.Min(a.x,Mathf.Min(b.x,c.x))*(W-1)),
+                0,W-1);
+
+            int x1=Mathf.Clamp(
+                Mathf.CeilToInt(
+                    Mathf.Max(a.x,Mathf.Max(b.x,c.x))*(W-1)),
+                0,W-1);
+
+            int y0=Mathf.Clamp(
+                Mathf.FloorToInt(
+                    Mathf.Min(a.y,Mathf.Min(b.y,c.y))*(H-1)),
+                0,H-1);
+
+            int y1=Mathf.Clamp(
+                Mathf.CeilToInt(
+                    Mathf.Max(a.y,Mathf.Max(b.y,c.y))*(H-1)),
+                0,H-1);
+
+            for(int y=y0;y<=y1;y++)
+            {
+                for(int x=x0;x<=x1;x++)
+                {
+                    float U=(float)x/(W-1);
+                    float V=(float)y/(H-1);
+
+                    float w0=
+                        ((b.y-c.y)*(U-c.x)+
+                         (c.x-b.x)*(V-c.y))/den;
+
+                    float w1=
+                        ((c.y-a.y)*(U-c.x)+
+                         (a.x-c.x)*(V-c.y))/den;
+
+                    float w2=1f-w0-w1;
+
+                    if(w0<0f||w1<0f||w2<0f)
+                        continue;
+
+                    float su=Mathf.Clamp01(
+                        (U-minU)/(maxU-minU));
+
+                    float sv=Mathf.Clamp01(
+                        (V-minV)/(maxV-minV));
+
+                    int sx=Mathf.Clamp(
+                        Mathf.RoundToInt(
+                            su*(img.width-1)),
+                        0,img.width-1);
+
+                    int sy=Mathf.Clamp(
+                        Mathf.RoundToInt(
+                            sv*(img.height-1)),
+                        0,img.height-1);
+
+                    result.SetPixel(
+                        x,y,
+                        img.GetPixel(sx,sy));
+
+                    changed++;
+                }
+            }
+        }
+
+        result.Apply(false,false);
+
+        var idField=
+            typeof(ManCustomSkins).GetField(
+                "m_SkinIDToIndexMapping",F);
+
+        var maps=
+            (System.Collections.Generic.Dictionary<
+                int,
+                System.Collections.Generic.Dictionary<byte,byte>>)
+            idField.GetValue(mc);
+
+        if(!maps.ContainsKey((int)corp))
+            return "ERROR: Corp mapping";
+
+        var used=maps[(int)corp];
+
+        int newID=-1;
+
+        for(
+            int id=ManCustomSkins.k_FIRST_MODDED_SKIN_ID;
+            id<=ManCustomSkins.k_MAX_SKIN_ID;
+            id++)
+        {
+            if(!used.ContainsKey((byte)id))
+            {
+                newID=id;
+                break;
+            }
+        }
+
+        if(newID<0)
+            return "ERROR: No Skin ID";
+
+        var infoField=
+            typeof(ManCustomSkins).GetField(
+                "m_SkinInfos",F);
+
+        var corpInfos=
+            (ManCustomSkins.CorporationSkins[])
+            infoField.GetValue(mc);
+
+        var baseInfo=
+            corpInfos[(int)corp].m_SkinsInCorp[0];
+
+        var st=new SkinTextures();
+        st.m_Albedo=result;
+        st.m_Metal=baseInfo.m_SkinTextureInfo.m_Metal;
+        st.m_Emissive=baseInfo.m_SkinTextureInfo.m_Emissive;
+        st.m_Variable=baseInfo.m_SkinTextureInfo.m_Variable;
+
+        var ui=mc.GetCorpSkinUIInfos(corp)[0];
+
+        var preview=UnityEngine.Sprite.Create(
+            img,
+            new UnityEngine.Rect(0,0,img.width,img.height),
+            new UnityEngine.Vector2(.5f,.5f),
+            100f);
+
+        preview.name=
+            corp+"_CustomSkin_"+newID+"_Preview";
+
+        ui.m_PreviewImage=preview;
+        ui.m_SkinButtonImage=preview;
+        ui.m_SkinMiniPaletteImage=preview;
+        ui.m_SkinLocked=false;
+        ui.m_IsModded=true;
+        ui.m_AlwaysEmissive=false;
+        ui.m_FallbackString=displayName;
+
+        var newInfo=new CorporationSkinInfo();
+
+        newInfo.name=
+            corp+"_CustomSkin_"+newID;
+
+        newInfo.m_SkinTextureInfo=st;
+        newInfo.m_SkinUIInfo=ui;
+        newInfo.m_SkinMeshes=baseInfo.m_SkinMeshes;
+        newInfo.m_SkinUniqueID=newID;
+        newInfo.m_Corporation=corp;
+
+        mc.AddSkinToCorp(
+            newInfo,
+            true);
+
+        mts.RebuildCorpArrayTextures();
+
+        var all=mc.GetCorpSkinTextureInfos(corp);
+        int count=all.Count;
+
+        int cols=(count+7)/8;
+        int rows=Mathf.Min(count,8);
+
+        var atlas=new UnityEngine.Texture2D(
+            W*cols,
+            H*rows,
+            UnityEngine.TextureFormat.RGBA32,
+            false);
+
+        atlas.filterMode=UnityEngine.FilterMode.Bilinear;
+        atlas.wrapMode=UnityEngine.TextureWrapMode.Clamp;
+
+        for(int i=0;i<count;i++)
+        {
+            var albedo=all[i].m_Albedo;
+
+            if(
+                albedo==null||
+                albedo.width!=W||
+                albedo.height!=H)
+                continue;
+
+            atlas.SetPixels32(
+                (i/8)*W,
+                (i%8)*H,
+                W,H,
+                albedo.GetPixels32(),
+                0);
+        }
+
+        atlas.Apply(false,false);
+
+        var finalField=
+            typeof(ManTechMaterialSwap).GetField(
+                "m_FinalCorpMaterials",F);
+
+        var finals=
+            (System.Collections.Generic.Dictionary<
+                int,UnityEngine.Material>)
+            finalField.GetValue(mts);
+
+        var corpMat=finals[(int)corp];
+
+        corpMat.EnableKeyword("_SKINS");
+        corpMat.SetTexture("_MainTex",atlas);
+
+        corpMat.SetFloat(
+            "_RcpNumSkinsU",
+            1f/(float)cols);
+
+        corpMat.SetFloat(
+            "_RcpNumSkinsV",
+            1f/(float)rows);
+
+        var pairField=
+            typeof(ManTechMaterialSwap).GetField(
+                "m_MaterialPairsInstances",F);
+
+        var pairs=
+            (System.Collections.IList)
+            pairField.GetValue(mts);
+
+        int patched=0;
+
+        for(
+            int gi=0;
+            gi<mts.m_MaterialsToSwap.Count;
+            gi++)
+        {
+            if(
+                mts.m_MaterialsToSwap[gi].m_Corp!=corp)
+                continue;
+
+            if(gi>=pairs.Count)
+                continue;
+
+            object pair=pairs[gi];
+
+            var materialField=
+                pair.GetType().GetField(
+                    "m_Materials",
+                    F);
+
+            if(materialField==null)
+                continue;
+
+            var mats=
+                (UnityEngine.Material[])
+                materialField.GetValue(pair);
+
+            if(mats==null)
+                continue;
+
+            for(int j=0;j<mats.Length;j++)
+            {
+                if(mats[j]==null)
+                    continue;
+
+                mats[j].EnableKeyword("_SKINS");
+                mats[j].SetTexture("_MainTex",atlas);
+
+                mats[j].SetFloat(
+                    "_RcpNumSkinsU",
+                    1f/(float)cols);
+
+                mats[j].SetFloat(
+                    "_RcpNumSkinsV",
+                    1f/(float)rows);
+
+                patched++;
+            }
+        }
+
+        mc.SetSelectedSkinForCorp(
+            count-1,
+            corp);
+
+        return
+            "CREATED"+
+            " | Corp="+corp+
+            " | Name="+displayName+
+            " | ID="+newID+
+            " | Index="+(count-1)+
+            " | Faces="+validFaces+
+            " | Pixels="+changed+
+            " | Atlas="+
+                atlas.width+"x"+atlas.height+
+            " | Mip="+atlas.mipmapCount+
+            " | Patched="+patched;
+    }
+}
+
+～～～インストール～～～
+BlockUVPicker.Install();
+
+========================
+～～～使い方～～～
+========================
+
+対象のブロックをS+右クリックする
+UVマップが出るので画像当てたい部分を選択する
+
+CustomSkinSelectedMakerV2.Create(
+    @"C:\Users\marim\OneDrive\画像\6994741.600000024_image.png",
+    "One Texture Skin"
+)
+
+あのコードで画像の場所を指定する
+
+==================================================
+END
+==================================================

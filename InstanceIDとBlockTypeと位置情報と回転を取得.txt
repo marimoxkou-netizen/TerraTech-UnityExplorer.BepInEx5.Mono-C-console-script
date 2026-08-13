@@ -1,0 +1,112 @@
+～～～定義～～～
+
+public sealed class BlockInfoPicker : UnityEngine.MonoBehaviour
+{
+    public static bool Enabled;
+
+    private static readonly BepInEx.Logging.ManualLogSource Log =
+        BepInEx.Logging.Logger.CreateLogSource("BlockInfoPicker");
+
+    public static BlockInfoPicker Install()
+    {
+        var picker =
+            UnityEngine.Object.FindObjectOfType<BlockInfoPicker>();
+
+        if (picker == null)
+        {
+            var obj = new UnityEngine.GameObject("BlockInfoPicker");
+            UnityEngine.Object.DontDestroyOnLoad(obj);
+            picker = obj.AddComponent<BlockInfoPicker>();
+        }
+
+        Enabled = true;
+        Log.LogInfo("ON: I + 右クリックでブロック情報を出力します。");
+        return picker;
+    }
+
+    public static bool Toggle()
+    {
+        Enabled = !Enabled;
+        Log.LogInfo("ブロック情報取得: " + (Enabled ? "ON" : "OFF"));
+        return Enabled;
+    }
+
+    private void Update()
+    {
+        if (!Enabled)
+            return;
+
+        if (UnityEngine.Input.GetKey(UnityEngine.KeyCode.I) &&
+            UnityEngine.Input.GetMouseButtonDown(1))
+        {
+            PrintPointerTarget();
+        }
+    }
+
+    private static void PrintPointerTarget()
+    {
+        TankBlock block = GetPointerTarget();
+
+        if (block == null)
+        {
+            Log.LogWarning("カーソルをブロックに合わせてください。");
+            return;
+        }
+
+        int instanceId = block.gameObject.GetInstanceID();
+        BlockTypes blockType = block.BlockType;
+        IntVector3 localPosition = block.cachedLocalPosition;
+        OrthoRotation localRotation = block.cachedLocalRotation;
+
+        string info =
+            "InstanceID=" + instanceId +
+            " | BlockType=" + blockType +
+            " | LocalPosition=" + localPosition +
+            " | LocalRotation=" + localRotation;
+
+        Log.LogInfo(info);
+        System.Console.WriteLine(info);
+    }
+
+    private static TankBlock GetPointerTarget()
+    {
+        var flags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        var pointer =
+            UnityEngine.Object.FindObjectOfType(typeof(ManPointer))
+            as ManPointer;
+
+        if (pointer == null)
+            return null;
+
+        var property = typeof(ManPointer).GetProperty(
+            "targetBlock",
+            flags
+        );
+
+        if (property != null)
+            return property.GetValue(pointer, null) as TankBlock;
+
+        var field = typeof(ManPointer).GetField(
+            "<targetBlock>k__BackingField",
+            flags
+        );
+
+        return field == null
+            ? null
+            : field.GetValue(pointer) as TankBlock;
+    }
+}
+
+～～～インストール～～～
+BlockInfoPicker.Install();
+
+～～～停止/再開～～～～
+BlockInfoPicker.Toggle();
+
+～～～使い方～～～
+Iキーを押しながら
+取得したいブロックにカーソルを向けて右クリックするとログに出る

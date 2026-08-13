@@ -1,0 +1,418 @@
+～～～定義～～～
+
+public sealed class TileBlockLoader : UnityEngine.MonoBehaviour
+{
+    public static bool Enabled;
+
+    private static readonly BepInEx.Logging.ManualLogSource Log =
+        BepInEx.Logging.Logger.CreateLogSource("TileBlockLoader");
+
+    private static readonly System.Collections.Generic.List<TargetArea> targets =
+        new System.Collections.Generic.List<TargetArea>();
+
+    private static HarmonyLib.Harmony harmony;
+
+    private sealed class TargetArea
+    {
+        public TankBlock Block;
+        public Vector3 Position;
+    }
+
+    public static TileBlockLoader Install()
+    {
+        var loader =
+            UnityEngine.Object.FindObjectOfType<TileBlockLoader>();
+
+        if (loader == null)
+        {
+            var obj =
+                new UnityEngine.GameObject("TileBlockLoader");
+
+            UnityEngine.Object.DontDestroyOnLoad(obj);
+
+            loader =
+                obj.AddComponent<TileBlockLoader>();
+        }
+
+        Enabled = true;
+
+        InstallHarmony();
+
+        Log.LogInfo(
+            "ON: T + 右クリックで永続タイルロードを切り替えます。"
+        );
+
+        return loader;
+    }
+
+    public static bool Toggle()
+    {
+        Enabled = !Enabled;
+
+        Log.LogInfo(
+            "TileBlockLoader: " +
+            (Enabled ? "ON" : "OFF")
+        );
+
+        return Enabled;
+    }
+
+    private void Update()
+    {
+        if (!Enabled)
+            return;
+
+        if (
+            UnityEngine.Input.GetKey(UnityEngine.KeyCode.T) &&
+            UnityEngine.Input.GetMouseButtonDown(1)
+        )
+        {
+            ToggleTarget();
+        }
+    }
+
+    private void ToggleTarget()
+    {
+        TankBlock block =
+            GetPointerTarget();
+
+        if (block == null)
+        {
+            Log.LogWarning(
+                "カーソルをブロックに合わせてください。"
+            );
+
+            return;
+        }
+
+        Vector3 position =
+            block.transform.position;
+
+        /*
+         * すでに登録されている場所か確認
+         */
+        TargetArea existing =
+            FindTarget(position);
+
+        if (existing != null)
+        {
+            targets.Remove(existing);
+
+            Log.LogInfo(
+                "OFF: " +
+                block.name +
+                " | Position=" +
+                position
+            );
+
+            return;
+        }
+
+        /*
+         * 新しく登録
+         */
+        TargetArea target =
+            new TargetArea();
+
+        target.Block = block;
+        target.Position = position;
+
+        targets.Add(target);
+
+        Log.LogInfo(
+            "ON: " +
+            block.name +
+            " | Position=" +
+            position +
+            " | TargetCount=" +
+            targets.Count
+        );
+
+        /*
+         * 登録直後にも即座にロード要求
+         */
+        ForceLoadedTiles(
+            target,
+            null
+        );
+    }
+
+    private static TargetArea FindTarget(
+        Vector3 position
+    )
+    {
+        for (int i = 0; i < targets.Count; i++)
+        {
+            TargetArea target =
+                targets[i];
+
+            /*
+             * 同じ場所をクリックしたと判定する距離
+             */
+            if (
+                Vector3.Distance(
+                    target.Position,
+                    position
+                ) < 10f
+            )
+            {
+                return target;
+            }
+        }
+
+        return null;
+    }
+
+    /*
+     * TileManager.UpdateTileRequestStates()
+     * の直後に呼ばれる。
+     */
+    private static void UpdateTileRequestStatesPostfix(
+        System.Collections.Generic.List<IntVector2> tileCoordsToCreate
+    )
+    {
+        if (!Enabled)
+            return;
+
+        if (targets.Count == 0)
+            return;
+
+        for (int i = 0; i < targets.Count; i++)
+        {
+            TargetArea target =
+                targets[i];
+
+            /*
+             * ブロックがまだ存在するなら、
+             * 現在位置を更新。
+             */
+            if (target.Block != null)
+            {
+                target.Position =
+                    target.Block.transform.position;
+            }
+
+            ForceLoadedTiles(
+                target,
+                tileCoordsToCreate
+            );
+        }
+    }
+
+    private static void ForceLoadedTiles(
+        TargetArea target,
+        System.Collections.Generic.List<IntVector2> tileCoordsToCreate
+    )
+    {
+        if (target == null)
+            return;
+
+        var world =
+            Singleton.Manager<ManWorld>.inst;
+
+        if (world == null)
+            return;
+
+        TileManager tm =
+            world.TileManager;
+
+        if (tm == null)
+            return;
+
+        var flags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        var lookupField =
+            typeof(TileManager).GetField(
+                "m_TileLookup",
+                flags
+            );
+
+        if (lookupField == null)
+            return;
+
+        var lookup =
+            lookupField.GetValue(tm)
+            as System.Collections.IDictionary;
+
+        if (lookup == null)
+            return;
+
+        float tileSize =
+            world.TileSize;
+
+        /*
+         * 384 × 2.5 = 960
+         */
+        float range =
+            tileSize * 2.5f;
+
+        foreach (
+            IntVector2 coord
+            in new TileManager.TilesWithinRadius(
+                target.Position,
+                range,
+                true
+            )
+        )
+        {
+            /*
+             * まだ存在しないタイル
+             */
+            if (!lookup.Contains(coord))
+            {
+                if (
+                    tileCoordsToCreate != null &&
+                    !tileCoordsToCreate.Contains(coord)
+                )
+                {
+                    tileCoordsToCreate.Add(coord);
+                }
+
+                continue;
+            }
+
+            WorldTile tile =
+                lookup[coord] as WorldTile;
+
+            if (tile == null)
+                continue;
+
+            /*
+             * 永続Loaded
+             */
+            tile.m_RequestState =
+                WorldTile.State.Loaded;
+        }
+    }
+
+    private static void InstallHarmony()
+    {
+        if (harmony != null)
+            return;
+
+        harmony =
+            new HarmonyLib.Harmony(
+                "Light.TileBlockLoader"
+            );
+
+        var flags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        System.Reflection.MethodInfo targetMethod = null;
+
+        foreach (
+            var method
+            in typeof(TileManager).GetMethods(flags)
+        )
+        {
+            if (
+                method.Name !=
+                "UpdateTileRequestStates"
+            )
+            {
+                continue;
+            }
+
+            var parameters =
+                method.GetParameters();
+
+            if (parameters.Length != 1)
+                continue;
+
+            targetMethod = method;
+            break;
+        }
+
+        if (targetMethod == null)
+        {
+            Log.LogError(
+                "UpdateTileRequestStates が見つかりません。"
+            );
+
+            return;
+        }
+
+        var postfix =
+            typeof(TileBlockLoader).GetMethod(
+                "UpdateTileRequestStatesPostfix",
+                flags |
+                System.Reflection.BindingFlags.Static
+            );
+
+        if (postfix == null)
+        {
+            Log.LogError(
+                "UpdateTileRequestStatesPostfix が見つかりません。"
+            );
+
+            return;
+        }
+
+        harmony.Patch(
+            targetMethod,
+            null,
+            new HarmonyLib.HarmonyMethod(postfix)
+        );
+
+        Log.LogInfo(
+            "PATCHED: " +
+            targetMethod
+        );
+    }
+
+    private static TankBlock GetPointerTarget()
+    {
+        var flags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        var pointer =
+            UnityEngine.Object.FindObjectOfType(
+                typeof(ManPointer)
+            ) as ManPointer;
+
+        if (pointer == null)
+            return null;
+
+        var property =
+            typeof(ManPointer).GetProperty(
+                "targetBlock",
+                flags
+            );
+
+        if (property != null)
+        {
+            return property.GetValue(
+                pointer,
+                null
+            ) as TankBlock;
+        }
+
+        var field =
+            typeof(ManPointer).GetField(
+                "<targetBlock>k__BackingField",
+                flags
+            );
+
+        return field == null
+            ? null
+            : field.GetValue(pointer)
+                as TankBlock;
+    }
+}
+
+～～～インストール～～～
+TileBlockLoader.Install();
+
+～～～このコードをオンオフ～～～
+TileBlockLoader.Toggle();
+
+～～～使い方～～～
+周りをロードさせたいブロックに向かってT+右クリック
+もう1度T+右クリックするとOFFになる

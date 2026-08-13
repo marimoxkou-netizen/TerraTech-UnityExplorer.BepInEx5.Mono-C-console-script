@@ -1,0 +1,513 @@
+～～～FillBlock定義～～～
+
+public class Light_CopyPaste_AllInOneV7 : UnityEngine.MonoBehaviour
+{
+    public static IntVector3 Spacing = new IntVector3(1, 1, 1);
+    public static bool CopyRangeMode = false;
+    public static bool Overwrite = false;
+    public static bool EraseMode = false;
+
+    private static bool hasSingleCopy = false;
+    private static BlockTypes singleType;
+    private static OrthoRotation singleRotation;
+
+    public class CopyEntry
+    {
+        public BlockTypes Type;
+        public IntVector3 Offset;
+        public OrthoRotation Rotation;
+    }
+
+    private static System.Collections.Generic.List<CopyEntry>
+        copiedRange =
+        new System.Collections.Generic.List<CopyEntry>();
+
+    private float nextTime = 0.0f;
+
+    private void Update()
+    {
+        bool ctrl =
+            UnityEngine.Input.GetKey(UnityEngine.KeyCode.LeftControl) ||
+            UnityEngine.Input.GetKey(UnityEngine.KeyCode.RightControl);
+
+        if (!ctrl || UnityEngine.Time.time < nextTime)
+            return;
+
+        if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.C))
+        {
+            nextTime = UnityEngine.Time.time + 0.25f;
+
+            if (CopyRangeMode)
+                CopyBlueRange();
+            else
+                CopySingle();
+
+            return;
+        }
+
+        if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.V))
+        {
+            nextTime = UnityEngine.Time.time + 0.25f;
+            PasteRedRange();
+        }
+    }
+
+    private static bool IsRed(TankBlock block)
+    {
+        return
+            (object)block != null &&
+            block.BlockType ==
+            BlockTypes.SPEColourBlock14_Red_111;
+    }
+
+    private static bool IsBlue(TankBlock block)
+    {
+        return
+            (object)block != null &&
+            block.BlockType ==
+            BlockTypes.SPEColourBlock05_DarkBlue_111;
+    }
+
+    private static Tank PlayerTank()
+    {
+        return Singleton.Manager<ManPlayer>.inst.m_LastPlayerTank;
+    }
+
+    private static TankBlock PointerTarget()
+    {
+        System.Reflection.BindingFlags bf =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        ManPointer pointer =
+            UnityEngine.Object.FindObjectOfType(typeof(ManPointer))
+            as ManPointer;
+
+        if ((object)pointer == null)
+            return null;
+
+        System.Reflection.PropertyInfo property =
+            typeof(ManPointer).GetProperty("targetBlock", bf);
+
+        TankBlock target = null;
+
+        if (property != null)
+            target = property.GetValue(pointer, null) as TankBlock;
+
+        if ((object)target == null)
+        {
+            System.Reflection.FieldInfo field =
+                typeof(ManPointer).GetField(
+                    "<targetBlock>k__BackingField",
+                    bf
+                );
+
+            if (field != null)
+                target = field.GetValue(pointer) as TankBlock;
+        }
+
+        return target;
+    }
+
+    public static void CopySingle()
+    {
+        TankBlock target = PointerTarget();
+
+        if ((object)target == null)
+        {
+            System.Console.WriteLine(
+                "COPY ERROR: カーソルを TankBlock に合わせてください"
+            );
+            return;
+        }
+
+        singleType = target.BlockType;
+        singleRotation = target.cachedLocalRotation;
+        hasSingleCopy = true;
+
+        System.Console.WriteLine("===== SINGLE COPY OK =====");
+        System.Console.WriteLine("Type: " + singleType);
+        System.Console.WriteLine(
+            "Rotation: " + singleRotation
+        );
+    }
+
+    public static void CopyBlueRange()
+    {
+        Tank tank = PlayerTank();
+
+        if ((object)tank == null)
+        {
+            System.Console.WriteLine("COPY ERROR: Tech がありません");
+            return;
+        }
+
+        System.Collections.Generic.List<TankBlock> blueMarkers =
+            new System.Collections.Generic.List<TankBlock>();
+
+        foreach (TankBlock block in tank.blockman.IterateBlocks())
+        {
+            if (IsBlue(block))
+                blueMarkers.Add(block);
+        }
+
+        if (blueMarkers.Count < 2)
+        {
+            System.Console.WriteLine(
+                "COPY ERROR: 青マーカーが2個必要です"
+            );
+            return;
+        }
+
+        TankBlock blueA =
+            blueMarkers[blueMarkers.Count - 1];
+
+        TankBlock blueB =
+            blueMarkers[blueMarkers.Count - 2];
+
+        IntVector3 a = blueA.cachedLocalPosition;
+        IntVector3 b = blueB.cachedLocalPosition;
+
+        int minX = System.Math.Min(a.x, b.x);
+        int maxX = System.Math.Max(a.x, b.x);
+        int minY = System.Math.Min(a.y, b.y);
+        int maxY = System.Math.Max(a.y, b.y);
+        int minZ = System.Math.Min(a.z, b.z);
+        int maxZ = System.Math.Max(a.z, b.z);
+
+        copiedRange.Clear();
+
+        foreach (TankBlock block in tank.blockman.IterateBlocks())
+        {
+            if ((object)block == null)
+                continue;
+
+            if ((object)block == (object)blueA ||
+                (object)block == (object)blueB)
+            {
+                continue;
+            }
+
+            IntVector3 blockPos = block.cachedLocalPosition;
+
+            if (blockPos.x < minX || blockPos.x > maxX ||
+                blockPos.y < minY || blockPos.y > maxY ||
+                blockPos.z < minZ || blockPos.z > maxZ)
+            {
+                continue;
+            }
+
+            CopyEntry entry = new CopyEntry();
+
+            entry.Type = block.BlockType;
+            entry.Rotation = block.cachedLocalRotation;
+            entry.Offset = new IntVector3(
+                blockPos.x - minX,
+                blockPos.y - minY,
+                blockPos.z - minZ
+            );
+
+            copiedRange.Add(entry);
+        }
+
+        System.Console.WriteLine("===== BLUE RANGE COPY OK =====");
+        System.Console.WriteLine(
+            "保存数: " + copiedRange.Count
+        );
+    }
+
+    private static bool Despawn(TankBlock block)
+    {
+        if ((object)block == null)
+            return false;
+
+        Singleton.Manager<ManLooseBlocks>.inst.RequestDespawnBlock(
+            block,
+            DespawnReason.Host
+        );
+
+        return true;
+    }
+
+    private static bool PlaceBlock(
+        Tank tank,
+        IntVector3 position,
+        BlockTypes type,
+        OrthoRotation rotation
+    )
+    {
+        BlockManager blockman = tank.blockman;
+
+        TankBlock existing =
+            blockman.GetBlockAtPosition(position);
+
+        if ((object)existing != null)
+        {
+            /*
+             * 赤マーカーは常に消して置換する。
+             * 通常ブロックは Overwrite=true の場合だけ置換する。
+             */
+            if (IsRed(existing) || Overwrite)
+            {
+                Despawn(existing);
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        TankBlock created =
+            Singleton.Manager<ManSpawn>.inst.SpawnBlock(
+                type,
+                tank.boundsCentreWorld,
+                UnityEngine.Quaternion.identity
+            );
+
+        if ((object)created == null)
+            return false;
+
+        System.Collections.Generic.List<BlockManager.BlockAttachment>
+            attachments =
+            new System.Collections.Generic.List
+            <BlockManager.BlockAttachment>();
+
+        if (!blockman.TryGetBlockAttachments(
+            created,
+            position,
+            rotation,
+            attachments
+        ))
+        {
+            Despawn(created);
+            return false;
+        }
+
+        bool attached =
+            blockman.RequestAttachBlock(
+                created,
+                position,
+                rotation
+            );
+
+        if (!attached)
+            Despawn(created);
+
+        return attached;
+    }
+
+    public static void PasteRedRange()
+    {
+        Tank tank = PlayerTank();
+
+        if ((object)tank == null)
+        {
+            System.Console.WriteLine("PASTE ERROR: Tech がありません");
+            return;
+        }
+
+        if (Spacing.x <= 0 || Spacing.y <= 0 || Spacing.z <= 0)
+        {
+            System.Console.WriteLine(
+                "PASTE ERROR: Spacing は各軸 1 以上です"
+            );
+            return;
+        }
+
+        System.Collections.Generic.List<TankBlock> redMarkers =
+            new System.Collections.Generic.List<TankBlock>();
+
+        foreach (TankBlock block in tank.blockman.IterateBlocks())
+        {
+            if (IsRed(block))
+                redMarkers.Add(block);
+        }
+
+        if (redMarkers.Count < 2)
+        {
+            System.Console.WriteLine(
+                "PASTE ERROR: 赤マーカーが2個必要です"
+            );
+            return;
+        }
+
+        IntVector3 a =
+            redMarkers[redMarkers.Count - 1].cachedLocalPosition;
+
+        IntVector3 b =
+            redMarkers[redMarkers.Count - 2].cachedLocalPosition;
+
+        int minX = System.Math.Min(a.x, b.x);
+        int maxX = System.Math.Max(a.x, b.x);
+        int minY = System.Math.Min(a.y, b.y);
+        int maxY = System.Math.Max(a.y, b.y);
+        int minZ = System.Math.Min(a.z, b.z);
+        int maxZ = System.Math.Max(a.z, b.z);
+
+        int changed = 0;
+        int skipped = 0;
+
+        if (EraseMode)
+        {
+            for (int x = minX; x <= maxX; x += Spacing.x)
+            {
+                for (int y = minY; y <= maxY; y += Spacing.y)
+                {
+                    for (int z = minZ; z <= maxZ; z += Spacing.z)
+                    {
+                        TankBlock existing =
+                            tank.blockman.GetBlockAtPosition(
+                                new IntVector3(x, y, z)
+                            );
+
+                        if ((object)existing != null)
+                        {
+                            Despawn(existing);
+                            changed++;
+                        }
+                    }
+                }
+            }
+
+            System.Console.WriteLine(
+                "ERASE 完了: " + changed
+            );
+
+            return;
+        }
+
+        if (!CopyRangeMode)
+        {
+            if (!hasSingleCopy)
+            {
+                System.Console.WriteLine(
+                    "PASTE ERROR: Ctrl+C でコピーしてください"
+                );
+                return;
+            }
+
+            for (int x = minX; x <= maxX; x += Spacing.x)
+            {
+                for (int y = minY; y <= maxY; y += Spacing.y)
+                {
+                    for (int z = minZ; z <= maxZ; z += Spacing.z)
+                    {
+                        if (PlaceBlock(
+                            tank,
+                            new IntVector3(x, y, z),
+                            singleType,
+                            singleRotation
+                        ))
+                        {
+                            changed++;
+                        }
+                        else
+                        {
+                            skipped++;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (copiedRange.Count == 0)
+            {
+                System.Console.WriteLine(
+                    "PASTE ERROR: 青範囲を Ctrl+C でコピーしてください"
+                );
+                return;
+            }
+
+            for (int i = 0; i < copiedRange.Count; i++)
+            {
+                CopyEntry rangeEntry = copiedRange[i];
+
+                IntVector3 target = new IntVector3(
+                    minX + rangeEntry.Offset.x * Spacing.x,
+                    minY + rangeEntry.Offset.y * Spacing.y,
+                    minZ + rangeEntry.Offset.z * Spacing.z
+                );
+
+                if (target.x < minX || target.x > maxX ||
+                    target.y < minY || target.y > maxY ||
+                    target.z < minZ || target.z > maxZ)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (PlaceBlock(
+                    tank,
+                    target,
+                    rangeEntry.Type,
+                    rangeEntry.Rotation
+                ))
+                {
+                    changed++;
+                }
+                else
+                {
+                    skipped++;
+                }
+            }
+        }
+
+        System.Console.WriteLine(
+            "完了: Add=" + changed +
+            " Skip=" + skipped
+        );
+    }
+}
+
+～～～Controller定義～～～
+
+{
+    UnityEngine.GameObject go =
+        UnityEngine.GameObject.Find(
+            "Light_CopyPaste_AllInOneV7"
+        );
+
+    if ((object)go == null)
+    {
+        go = new UnityEngine.GameObject(
+            "Light_CopyPaste_AllInOneV7"
+        );
+    }
+
+    if ((object)go.GetComponent<Light_CopyPaste_AllInOneV7>() == null)
+    {
+        go.AddComponent<Light_CopyPaste_AllInOneV7>();
+    }
+
+    Light_CopyPaste_AllInOneV7.CopyRangeMode = false;
+    Light_CopyPaste_AllInOneV7.Overwrite = false;
+    Light_CopyPaste_AllInOneV7.EraseMode = false;
+    Light_CopyPaste_AllInOneV7.Spacing =
+        new IntVector3(1, 1, 1);
+
+    System.Console.WriteLine("V7 準備完了");
+}
+
+～～～コマンド文～～～
+
+    Light_CopyPaste_AllInOneV7.CopyRangeMode = false;
+    Light_CopyPaste_AllInOneV7.Overwrite = false;
+    Light_CopyPaste_AllInOneV7.EraseMode = false;
+    Light_CopyPaste_AllInOneV7.Spacing =
+        new IntVector3(1, 1, 1);
+
+
+～～～使い方～～～
+
+Fillしたいブロックをコントロール+Cする
+回転はその情報が使用される。
+次に赤ブロックで範囲を指定
+コントロールVすると召喚
+
+    Light_CopyPaste_AllInOneV7.CopyRangeMode = false;=trueにして青ブロックで範囲指定してコントロールCするとその範囲がコピーされる
+    Light_CopyPaste_AllInOneV7.Overwrite = false;=指定内にブロックがあったとき上書きするか
+    Light_CopyPaste_AllInOneV7.EraseMode = false;=削除モード
+    Light_CopyPaste_AllInOneV7.Spacing =
+        new IntVector3(1, 1, 1);=Fillしたときの間隔

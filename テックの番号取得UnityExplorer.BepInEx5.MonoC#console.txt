@@ -1,0 +1,25 @@
+～～～～半径50マスにいるテックの番号をlogに出す～～～～
+
+Vector3 center = Singleton.playerTank.visible.centrePosition;
+float radius = 50f;
+
+Bitfield<ObjectTypes> vehicleOnly = new Bitfield<ObjectTypes>();
+vehicleOnly.Add((int)ObjectTypes.Vehicle);
+
+var iterator = Singleton.Manager<ManVisible>.inst.VisiblesTouchingRadius(center, radius, vehicleOnly);
+
+List<TrackedVisible> nearbyTechs = new List<TrackedVisible>();
+
+foreach (Visible v in iterator)
+{
+    if (v == null || v.tank == null) continue;
+    if (v.tank == Singleton.playerTank) continue; // 自分のTechは除外
+
+    TrackedVisible tv = Singleton.Manager<ManVisible>.inst.GetTrackedVisible(v.ID);
+    if (tv == null) continue;
+
+    string techName = tv.visible.IsNotNull() ? tv.visible.name : "(no name)";
+    nearbyTechs.Add(tv);
+
+    Log(string.Format("[{0}] {1}", nearbyTechs.Count - 1, techName));
+}

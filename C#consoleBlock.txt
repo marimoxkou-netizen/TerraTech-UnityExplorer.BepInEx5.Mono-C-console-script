@@ -1,0 +1,340 @@
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+TerraTech Circuit Console Runner
+Ctrl + 右クリックで対象を選択して実行する版
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+
+
+【1. 定義】
+最初に、以下を一括で C# Console へ実行する。
+再起動後は毎回必要。
+
+public sealed class CircuitConsoleRunnerV3 : UnityEngine.MonoBehaviour
+{
+    private ModuleCircuitReceiver receiver;
+    private System.Action action;
+    private System.Action<Circuits.BlockChargeData> handler;
+    private int interval;
+    private int previous;
+    private int held;
+
+    public static CircuitConsoleRunnerV3 Bind(
+        UnityEngine.GameObject target,
+        int ticks,
+        System.Action code)
+    {
+        var input = target.GetComponent<ModuleCircuitReceiver>();
+
+        if (input == null || input.GetBlock() == null)
+            throw new System.Exception("有効な回路レシーバーではありません。");
+
+        var runner = target.GetComponent<CircuitConsoleRunnerV3>();
+
+        if (runner == null)
+            runner = target.AddComponent<CircuitConsoleRunnerV3>();
+
+        runner.Unsubscribe();
+        runner.receiver = input;
+        runner.action = code;
+        runner.interval = System.Math.Max(1, ticks);
+        runner.previous = 0;
+        runner.held = 0;
+        runner.handler = runner.OnCharge;
+
+        input.SubscribeToChargeData(
+            runner.handler, null, null, null, false);
+
+        return runner;
+    }
+
+    private void OnCharge(Circuits.BlockChargeData data)
+    {
+        int strength = data.ChargeStrength;
+
+        try
+        {
+            // 強度1: 0 -> 1 になった時だけ一回実行
+            if (strength == 1)
+            {
+                if (previous <= 0)
+                    action();
+
+                held = 0;
+            }
+            // 強度2以上: 到達時に一回、その後は指定tickごと
+            else if (strength >= 2)
+            {
+                if (previous < 2)
+                {
+                    held = 0;
+                    action();
+                }
+                else if (++held >= interval)
+                {
+                    held = 0;
+                    action();
+                }
+            }
+            else
+            {
+                held = 0;
+            }
+        }
+        catch (System.Exception ex)
+        {
+            BepInEx.Logging.Logger.CreateLogSource("CircuitConsole")
+                .LogError(ex);
+        }
+
+        previous = strength;
+    }
+
+    private void Unsubscribe()
+    {
+        if (receiver != null && handler != null)
+            receiver.UnSubscribeFromChargeData(
+                handler, null, null, null);
+
+        handler = null;
+    }
+
+    private void OnDestroy()
+    {
+        Unsubscribe();
+    }
+}
+
+
+public sealed class CircuitTargetPickerV2 : UnityEngine.MonoBehaviour
+{
+    public static bool Enabled;
+
+    private static bool hasTarget;
+    private static int savedId;
+    private static BlockTypes savedType;
+    private static IntVector3 savedPosition;
+
+    private static readonly BepInEx.Logging.ManualLogSource Log =
+        BepInEx.Logging.Logger.CreateLogSource("CircuitTargetPicker");
+
+    public static CircuitTargetPickerV2 Install()
+    {
+        var picker =
+            UnityEngine.Object.FindObjectOfType<CircuitTargetPickerV2>();
+
+        if (picker == null)
+        {
+            var obj = new UnityEngine.GameObject("CircuitTargetPickerV2");
+            UnityEngine.Object.DontDestroyOnLoad(obj);
+            picker = obj.AddComponent<CircuitTargetPickerV2>();
+        }
+
+        Enabled = true;
+        Log.LogInfo("ON: Ctrl + 右クリックで回路対象を保存します。");
+        return picker;
+    }
+
+    public static bool Toggle()
+    {
+        Enabled = !Enabled;
+        Log.LogInfo("対象選択: " + (Enabled ? "ON" : "OFF"));
+        return Enabled;
+    }
+
+    public static string LatestInfo()
+    {
+        if (!hasTarget)
+            return "対象は未選択です。";
+
+        return
+            "id=" + savedId +
+            " | type=" + savedType +
+            " | local=" + savedPosition;
+    }
+
+    public static CircuitConsoleRunnerV3 BindLatest(
+        int ticks,
+        System.Action code)
+    {
+        TankBlock target = ResolveTarget();
+
+        return CircuitConsoleRunnerV3.Bind(
+            target.gameObject,
+            ticks,
+            code
+        );
+    }
+
+    private void Update()
+    {
+        bool ctrl =
+            UnityEngine.Input.GetKey(UnityEngine.KeyCode.LeftControl) ||
+            UnityEngine.Input.GetKey(UnityEngine.KeyCode.RightControl);
+
+        if (Enabled && ctrl && UnityEngine.Input.GetMouseButtonDown(1))
+            SavePointerTarget();
+    }
+
+    private static void SavePointerTarget()
+    {
+        TankBlock target = GetPointerTarget();
+
+        if (target == null)
+        {
+            Log.LogWarning("カーソルをブロックに合わせてください。");
+            return;
+        }
+
+        var input = target.GetComponent<ModuleCircuitReceiver>();
+
+        if (input == null || input.GetBlock() == null)
+        {
+            Log.LogWarning(
+                target.BlockType + " は有効な回路レシーバーではありません。"
+            );
+            return;
+        }
+
+        hasTarget = true;
+        savedId = target.gameObject.GetInstanceID();
+        savedType = target.BlockType;
+        savedPosition = target.cachedLocalPosition;
+
+        Log.LogInfo(
+            "保存: id=" + savedId +
+            " | type=" + savedType +
+            " | local=" + savedPosition
+        );
+    }
+
+    private static TankBlock ResolveTarget()
+    {
+        if (!hasTarget)
+            throw new System.Exception(
+                "先に Ctrl + 右クリックで対象を選択してください。"
+            );
+
+        Tank tech = Singleton.playerTank;
+
+        if (tech == null)
+            throw new System.Exception("現在乗っている Tech がありません。");
+
+        foreach (TankBlock block in tech.blockman.IterateBlocks())
+        {
+            if (block.gameObject.GetInstanceID() == savedId)
+                return block;
+        }
+
+        foreach (TankBlock block in tech.blockman.IterateBlocks())
+        {
+            IntVector3 position = block.cachedLocalPosition;
+
+            if (block.BlockType == savedType &&
+                position.x == savedPosition.x &&
+                position.y == savedPosition.y &&
+                position.z == savedPosition.z)
+            {
+                return block;
+            }
+        }
+
+        throw new System.Exception(
+            "保存済み対象が現在の Tech にありません。"
+        );
+    }
+
+    private static TankBlock GetPointerTarget()
+    {
+        var flags =
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public |
+            System.Reflection.BindingFlags.NonPublic;
+
+        var pointer =
+            UnityEngine.Object.FindObjectOfType(typeof(ManPointer))
+            as ManPointer;
+
+        if (pointer == null)
+            return null;
+
+        var property = typeof(ManPointer).GetProperty(
+            "targetBlock",
+            flags
+        );
+
+        if (property != null)
+            return property.GetValue(pointer, null) as TankBlock;
+
+        var field = typeof(ManPointer).GetField(
+            "<targetBlock>k__BackingField",
+            flags
+        );
+
+        return field == null
+            ? null
+            : field.GetValue(pointer) as TankBlock;
+    }
+}
+
+
+【2. 有効化】
+定義後に一度実行する。
+
+var circuitLog =
+    BepInEx.Logging.Logger.CreateLogSource("CircuitConsole");
+
+CircuitTargetPickerV2.Install();
+
+
+【3. 対象選択】
+内部名:EXP_Circuits_Display_Pixel_Fixed_111
+表示名:Reticule Research 固定型ドットパネル
+にカーソルを合わせて、
+Ctrl を押しながら右クリックする。
+
+成功すると BepInEx ログに「保存: id=...」が出る。
+
+
+【4. 選択した対象へ処理を登録】
+30 tick ごとに実行する例。
+
+CircuitTargetPickerV2.BindLatest(
+    30,
+    () => circuitLog.LogInfo("選択した Pixel Display 側で実行された")
+);
+
+
+【5. 実行内容の変更例】
+上の LogInfo 行を、実行したい C# に入れ替える。
+
+CircuitTargetPickerV2.BindLatest(
+    30,
+    () =>
+    {
+        // ここに実行したい C# 処理を書く
+        circuitLog.LogInfo("信号を受信");
+    }
+);
+
+
+【6. 補助コマンド】
+対象選択機能のオン／オフ切替:
+
+CircuitTargetPickerV2.Toggle();
+
+現在保存している対象を確認:
+（末尾にセミコロンを付けない）
+
+CircuitTargetPickerV2.LatestInfo()
+
+
+【動作仕様】
+・信号強度 1:
+  信号なしから強度1になった時、一回だけ実行。
+
+・信号強度 2 以上:
+  信号到達時に一回実行し、信号が続く間は指定 tick ごとに実行。
+
+・再起動後:
+  C# Console の定義と選択情報は消えるため、
+  手順1 → 2 → 3 → 4 をもう一度実行する。
+

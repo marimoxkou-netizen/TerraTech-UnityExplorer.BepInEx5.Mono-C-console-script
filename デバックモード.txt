@@ -1,0 +1,96 @@
+using System.Reflection;
+
+var d = Singleton.Manager<DebugUtil>.inst;
+
+// Developmentチート有効化
+var allowDebug = d.GetType().GetField(
+"m_AllowDebugControls",
+BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+);
+allowDebug.SetValue(d, true);
+
+
+// 開発チート確認
+d.AreCheatsEnabled(DebugUtil.CheatType.Development, false);
+
+
+// デバッグ操作ブロック解除
+d.SetDebugControlBlocked(
+DebugUtil.DebugControlBlockedReason.PresetMenu,
+false
+);
+
+d.SetDebugControlBlocked(
+DebugUtil.DebugControlBlockedReason.BlockMenu,
+false
+);
+
+d.SetDebugControlBlocked(
+DebugUtil.DebugControlBlockedReason.ChunkMenu,
+false
+);
+
+d.SetDebugControlBlocked(
+DebugUtil.DebugControlBlockedReason.SceneryMenu,
+false
+);
+
+d.SetDebugControlBlocked(
+DebugUtil.DebugControlBlockedReason.DebugBlockNameDisplay,
+false
+);
+
+
+// 全ブロック表示
+d.SetShowAllBlocksInInventory(true);
+
+
+// ショップブロック無制限
+var unlimited = d.GetType().GetField(
+"m_UnlimitedShopBlocks",
+BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+);
+
+if (unlimited != null)
+{
+unlimited.SetValue(d, true);
+}
+
+
+// Tech Loader制限解除
+var removeRestrictions = d.GetType().GetProperty(
+"RemoveTechLoaderRestrictions",
+BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+);
+
+if (removeRestrictions != null)
+{
+removeRestrictions.SetValue(d, true);
+}
+
+
+// SpawnAllMissions
+var spawnMissions = d.GetType().GetField(
+"m_SpawnAllMissions",
+BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+);
+
+if (spawnMissions != null)
+{
+spawnMissions.SetValue(d, true);
+}
+
+
+// 無敵
+var immortal = d.GetType().GetField(
+"m_Immortal",
+BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic
+);
+
+if (immortal != null)
+{
+immortal.SetValue(d, true);
+}
+
+
+d.AreCheatsEnabled(DebugUtil.CheatType.Development, false);
