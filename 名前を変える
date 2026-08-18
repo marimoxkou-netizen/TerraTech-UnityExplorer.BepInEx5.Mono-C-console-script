@@ -1,0 +1,3 @@
+var myPlayer = Singleton.Manager<ManNetwork>.inst.MyPlayer;
+myPlayer.SetName("新しい名前");
+//新しい名前のところ変えてね
