@@ -1,0 +1,3 @@
+var go = new GameObject("TechTpHelperObj");
+go.AddComponent<TechTpHelper>();
+UnityEngine.Object.DontDestroyOnLoad(go);
