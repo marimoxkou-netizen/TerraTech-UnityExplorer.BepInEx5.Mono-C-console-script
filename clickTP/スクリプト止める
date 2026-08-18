@@ -1,0 +1,1 @@
+UnityEngine.Object.Destroy(GameObject.Find("TechTpHelperObj"));
