@@ -1,0 +1,77 @@
+var nt = Singleton.Manager<ManNetwork>.inst.MyPlayer.m_CurTech;
+var flags =
+    System.Reflection.BindingFlags.Instance |
+    System.Reflection.BindingFlags.Public |
+    System.Reflection.BindingFlags.NonPublic;
+var tankField = nt.GetType().GetField(
+    "<tech>k__BackingField", flags);
+var tank = tankField.GetValue(nt) as Tank;
+var updateField = tank.GetType().GetField(
+    "UpdateEvent", flags);
+var updateEvent = (EventNoParams)updateField.GetValue(tank);
+bool tpMode = false;
+bool lastT = false;
+System.Action tpAction = () =>
+{
+    bool shift =
+        UnityEngine.Input.GetKey(UnityEngine.KeyCode.LeftShift) ||
+        UnityEngine.Input.GetKey(UnityEngine.KeyCode.RightShift);
+    bool t =
+        UnityEngine.Input.GetKey(UnityEngine.KeyCode.T);
+    // Shift + T の押した瞬間だけ切り替え
+    if (shift && t && !lastT)
+    {
+        tpMode = !tpMode;
+        UnityEngine.Debug.Log(
+            "TP Mode: " + (tpMode ? "ON" : "OFF")
+        );
+    }
+    lastT = t;
+    if (!tpMode)
+        return;
+    // 左クリック
+    if (!UnityEngine.Input.GetMouseButtonDown(0))
+        return;
+    var transField = tank.GetType().GetField(
+        "<trans>k__BackingField", flags);
+    var rbField = tank.GetType().GetField(
+        "<rbody>k__BackingField", flags);
+    var trans =
+        transField.GetValue(tank)
+        as UnityEngine.Transform;
+    var rb =
+        rbField.GetValue(tank)
+        as UnityEngine.Rigidbody;
+    var cam = UnityEngine.Camera.main;
+    if (trans == null || cam == null)
+        return;
+    var ray = cam.ScreenPointToRay(
+        UnityEngine.Input.mousePosition
+    );
+    UnityEngine.RaycastHit hit;
+    if (!UnityEngine.Physics.Raycast(
+        ray,
+        out hit,
+        10000f))
+    {
+        UnityEngine.Debug.Log("TP: no hit");
+        return;
+    }
+    var pos =
+        hit.point +
+        UnityEngine.Vector3.up * 2f;
+    trans.position = pos;
+    if (rb != null)
+    {
+        rb.position = pos;
+        rb.velocity = UnityEngine.Vector3.zero;
+        rb.angularVelocity = UnityEngine.Vector3.zero;
+    }
+    UnityEngine.Debug.Log(
+        "TP -> " + pos
+    );
+};
+updateEvent.Subscribe(tpAction);
+UnityEngine.Debug.Log(
+    "Mouse TP loaded | Shift+T = toggle | Left Click = TP"
+);
