@@ -1,0 +1,243 @@
+public class CreativeFly : UnityEngine.MonoBehaviour
+{
+    private Tank tank;
+    private UnityEngine.Rigidbody rb;
+
+    private bool flyMode = false;
+
+    private const float NormalSpeed = 25f;
+    private const float FastSpeed = 80f;
+
+    void Start()
+    {
+        RefreshTank();
+
+        UnityEngine.Debug.Log(
+            "Creative Fly loaded | F = toggle | WASD = move | Space/Ctrl = up/down | Shift = fast"
+        );
+    }
+
+    void Update()
+    {
+        // Fで飛行モード切り替え
+        if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.F))
+        {
+            flyMode = !flyMode;
+
+            if (flyMode)
+            {
+                RefreshTank();
+
+                if (rb != null)
+                {
+                    rb.useGravity = false;
+                    rb.velocity = UnityEngine.Vector3.zero;
+                    rb.angularVelocity = UnityEngine.Vector3.zero;
+                }
+            }
+            else
+            {
+                DisableFlyPhysics();
+            }
+
+            UnityEngine.Debug.Log(
+                "Creative Fly: " +
+                (flyMode ? "ON" : "OFF")
+            );
+        }
+
+        if (!flyMode)
+            return;
+
+        // Techが変わった場合に再取得
+        if (tank == null || rb == null)
+        {
+            RefreshTank();
+
+            if (tank == null || rb == null)
+                return;
+
+            rb.useGravity = false;
+        }
+
+        var cam = UnityEngine.Camera.main;
+
+        if (cam == null)
+            return;
+
+        // =========================
+        // 移動方向
+        // =========================
+
+        UnityEngine.Vector3 dir =
+            UnityEngine.Vector3.zero;
+
+        // カメラ基準の前後左右
+        UnityEngine.Vector3 forward =
+            cam.transform.forward;
+
+        UnityEngine.Vector3 right =
+            cam.transform.right;
+
+        // 水平方向だけ使用
+        forward.y = 0f;
+        right.y = 0f;
+
+        if (forward.sqrMagnitude > 0.001f)
+            forward.Normalize();
+
+        if (right.sqrMagnitude > 0.001f)
+            right.Normalize();
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.W))
+        {
+            dir += forward;
+        }
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.S))
+        {
+            dir -= forward;
+        }
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.A))
+        {
+            dir -= right;
+        }
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.D))
+        {
+            dir += right;
+        }
+
+        // =========================
+        // 上下
+        // =========================
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.Space))
+        {
+            dir += UnityEngine.Vector3.up;
+        }
+
+        if (UnityEngine.Input.GetKey(
+            UnityEngine.KeyCode.LeftControl))
+        {
+            dir -= UnityEngine.Vector3.up;
+        }
+
+        // =========================
+        // 速度
+        // =========================
+
+        float speed =
+            UnityEngine.Input.GetKey(
+                UnityEngine.KeyCode.LeftShift)
+            ? FastSpeed
+            : NormalSpeed;
+
+        if (dir.sqrMagnitude > 0.001f)
+            dir.Normalize();
+
+        // =========================
+        // 物理制御
+        // =========================
+
+        rb.useGravity = false;
+
+        rb.velocity =
+            dir * speed;
+
+        rb.angularVelocity =
+            UnityEngine.Vector3.zero;
+
+        // =========================
+        // Techの向きをカメラに合わせる
+        // =========================
+
+        UnityEngine.Vector3 look =
+            cam.transform.forward;
+
+        // 上下方向は無視
+        look.y = 0f;
+
+        if (look.sqrMagnitude > 0.001f)
+        {
+            UnityEngine.Quaternion targetRotation =
+                UnityEngine.Quaternion.LookRotation(
+                    look.normalized,
+                    UnityEngine.Vector3.up
+                );
+
+            tank.trans.rotation =
+                targetRotation;
+        }
+    }
+
+    // =========================
+    // 現在のTechを取得
+    // =========================
+
+    void RefreshTank()
+    {
+        var manager =
+            Singleton.Manager<ManNetwork>.inst;
+
+        if (manager == null)
+            return;
+
+        var player =
+            manager.MyPlayer;
+
+        if (player == null)
+            return;
+
+        if (player.CurTech == null)
+            return;
+
+        if (player.CurTech.tech == null)
+            return;
+
+        tank =
+            player.CurTech.tech;
+
+        rb =
+            tank.rbody;
+
+        UnityEngine.Debug.Log(
+            "Fly Tank refreshed: " +
+            tank.name
+        );
+    }
+
+    // =========================
+    // 飛行終了時に物理を戻す
+    // =========================
+
+    void DisableFlyPhysics()
+    {
+        if (rb == null)
+            return;
+
+        rb.useGravity = true;
+
+        rb.angularVelocity =
+            UnityEngine.Vector3.zero;
+
+        UnityEngine.Debug.Log(
+            "Creative Fly physics restored"
+        );
+    }
+
+    // =========================
+    // オブジェクト破棄時
+    // =========================
+
+    void OnDestroy()
+    {
+        DisableFlyPhysics();
+    }
+}
