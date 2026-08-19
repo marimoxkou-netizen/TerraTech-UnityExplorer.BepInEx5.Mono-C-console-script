@@ -1,0 +1,3 @@
+var go = new UnityEngine.GameObject("CreativeFly");
+var fly = go.AddComponent<CreativeFly>();
+UnityEngine.Object.DontDestroyOnLoad(go);
